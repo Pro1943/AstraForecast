@@ -34,7 +34,7 @@ function uniqueBases(candidates) {
 }
 
 const explicitCandidates = uniqueBases([queryApi, metaApi, windowApi].filter(Boolean));
-const API_CANDIDATES = explicitCandidates.length ? uniqueBases(["", ...explicitCandidates]) : [""];
+const API_CANDIDATES = explicitCandidates.length ? explicitCandidates : [""];
 
 function showLoading(on = true) {
   const ov = document.getElementById("loading-overlay");
