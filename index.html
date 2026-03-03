@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AstraForecast - Interactive Space Debris Policy Dashboard</title>
+    <meta name="api-base-url" content="" />
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <div id="loading-overlay" class="hidden">
+      <div class="spinner"></div>
+    </div>
+
+    <header class="top-nav">
+      <a class="brand" href="index.html">
+        <img src="assets/logo.svg" alt="AstraForecast logo" class="brand-logo" />
+        <span>AstraForecast</span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" aria-current="page">Home</a>
+        <a href="why-this-matters.html">Why This Matters</a>
+        <a href="model-limitations.html">Model Limitations</a>
+        <a href="about-creator.html">About Creator</a>
+      </nav>
+    </header>
+
+    <main class="container">
+      <header class="hero">
+        <h1>AstraForecast</h1>
+        <p class="subtitle">Policy-support forecasting for satellite growth and orbital debris risk.</p>
+      </header>
+
+      <section class="card highlight-card">
+        <h2>2055 Impact Snapshot: Early vs Late Intervention</h2>
+        <div class="highlight-grid">
+          <div class="highlight-item">
+            <div class="label">Start +5 (2055 debris)</div>
+            <div class="value" id="highlight-year-5">-</div>
+          </div>
+          <div class="highlight-item">
+            <div class="label">Start +15 (2055 debris)</div>
+            <div class="value" id="highlight-year-15">-</div>
+          </div>
+          <div class="highlight-item">
+            <div class="label">Early-vs-Late Reduction</div>
+            <div class="value" id="highlight-diff-pct">-</div>
+          </div>
+        </div>
+        <p id="highlight-note" class="helper-text"></p>
+      </section>
+
+      <section class="controls-panel">
+        <div class="control-group">
+          <label>Mitigation Start Offset (years)</label>
+          <input type="range" id="slider-mitigation-year" min="5" max="25" value="10" step="1" />
+          <span id="mitigation-year-display">+10 years</span>
+        </div>
+        <div class="control-group">
+          <label>
+            Mitigation Strength
+            <span class="info-tip" tabindex="0" data-tip="Yearly reduction applied after mitigation starts.">i</span>
+          </label>
+          <input type="range" id="slider-mitigation-strength" min="0.005" max="0.03" value="0.01" step="0.005" />
+          <span id="mitigation-strength-display">1.0%/year</span>
+        </div>
+        <div class="control-group">
+          <button id="btn-export-csv" class="btn-export">Export CSV</button>
+          <button id="btn-toggle-mode" class="btn-mode">Compare Scenarios</button>
+        </div>
+      </section>
+
+      <section class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon">R</div>
+          <div class="metric-content">
+            <h3>Final Launches</h3>
+            <div class="metric-value" id="metric-launches">-</div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">S</div>
+          <div class="metric-content">
+            <h3>Total Satellites</h3>
+            <div class="metric-value" id="metric-satellites">-</div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">D</div>
+          <div class="metric-content">
+            <h3>Debris Saved</h3>
+            <div class="metric-value" id="metric-debris-saved">-</div>
+            <div class="metric-subtitle" id="metric-debris-pct">-</div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">!</div>
+          <div class="metric-content">
+            <h3>Risk Reduction</h3>
+            <div class="metric-value" id="metric-risk-reduction">-</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="charts-container">
+        <section class="card">
+          <h2>Rocket Launches (30-Year Forecast)</h2>
+          <canvas id="chart-rockets"></canvas>
+        </section>
+
+        <section class="card">
+          <h2>Satellite Growth (Cumulative)</h2>
+          <canvas id="chart-satellites"></canvas>
+        </section>
+
+        <section class="card">
+          <h2>
+            Debris Trajectory
+            <span class="info-tip" tabindex="0" data-tip="Heuristic multiplier, not full orbital physics.">i</span>
+          </h2>
+          <canvas id="chart-debris"></canvas>
+        </section>
+      </div>
+
+      <section class="card">
+        <h2>
+          Risk Heatmap (Debris/Satellite Ratio)
+          <span class="info-tip" tabindex="0" data-tip="Synthetic risk index based on debris-to-satellite ratio.">i</span>
+        </h2>
+        <canvas id="chart-risk"></canvas>
+      </section>
+
+      <section class="card risk-explain-panel">
+        <h2>Risk Interpretation Panel</h2>
+        <p><strong>Risk Level:</strong> <span id="risk-level">-</span></p>
+        <p><strong>Status:</strong> <span id="risk-status">-</span></p>
+        <p><strong>Recommended Action:</strong> <span id="risk-recommendation">-</span></p>
+      </section>
+
+      <section class="card">
+        <h2>Risk Category Breakdown (Current Scenario)</h2>
+        <canvas id="chart-risk-dist"></canvas>
+      </section>
+
+      <section id="scenario-section" class="card">
+        <h2>Mitigation Scenario Comparison</h2>
+        <div id="scenario-buttons" class="scenario-grid">
+          <button class="scenario-btn active" data-scenario="year_5">Start +5</button>
+          <button class="scenario-btn" data-scenario="year_10">Start +10 (Default)</button>
+          <button class="scenario-btn" data-scenario="year_15">Start +15</button>
+          <button class="scenario-btn" data-scenario="year_20">Start +20</button>
+        </div>
+        <canvas id="chart-scenarios"></canvas>
+      </section>
+
+      <section class="card insights-section">
+        <h2>Key Insights and Recommendations</h2>
+        <div id="insights-text" class="insights-text">Loading insights...</div>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

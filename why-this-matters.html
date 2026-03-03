@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AstraForecast - Why This Matters</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="top-nav">
+      <a class="brand" href="index.html">
+        <img src="assets/logo.svg" alt="AstraForecast logo" class="brand-logo" />
+        <span>AstraForecast</span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="why-this-matters.html" aria-current="page">Why This Matters</a>
+        <a href="model-limitations.html">Model Limitations</a>
+        <a href="about-creator.html">About Creator</a>
+      </nav>
+    </header>
+
+    <main class="container content-page">
+      <section class="content-block">
+        <h2>Why Orbital Risk Demands Action</h2>
+        <p>
+          Kessler Syndrome describes a cascading collision process where debris generates more debris, making
+          critical orbits increasingly unsafe for satellites and future missions.
+        </p>
+        <p>
+          Sustainability in orbit is no longer optional. Delayed mitigation can lock policy-makers into expensive
+          and reactive responses instead of proactive, coordinated prevention.
+        </p>
+        <p>
+          AstraForecast is designed to support proactive policy planning by quantifying how intervention timing
+          influences long-horizon debris outcomes.
+        </p>
+      </section>
+
+      <section class="content-block">
+        <h2>Data Transparency</h2>
+        <ul>
+          <li><strong>Source:</strong> Project dataset file `datasets/space_launches.csv` (curated historical series).</li>
+          <li><strong>Coverage:</strong> 2000 through the latest dataset year.</li>
+          <li><strong>Preprocessing:</strong> year sorting, schema filtering to launch/satellite columns, cumulative derivations.</li>
+        </ul>
+      </section>
+
+      <section class="content-block">
+        <h2>Why Polynomial Instead of Exponential</h2>
+        <p>
+          Exponential fits can overstate long-run growth when data is limited and policy interventions are expected.
+          A degree-2 polynomial provides a flexible but more conservative trend surface for policy-support forecasting.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
