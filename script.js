@@ -4,7 +4,6 @@ const predictionCache = new Map();
 let latestUpdateToken = 0;
 let sliderUpdateTimer = null;
 
-const DEFAULT_REMOTE_API = "https://astra-forecast-backend.vercel.app";
 const queryApi = new URLSearchParams(window.location.search).get("api")?.trim() || "";
 const metaApi = document.querySelector('meta[name="api-base-url"]')?.getAttribute("content")?.trim() || "";
 const windowApi = (window.ORBITAL_API_BASE || "").trim();
@@ -38,7 +37,6 @@ const API_CANDIDATES = uniqueBases([
   windowApi,
   storedApi,
   "",
-  DEFAULT_REMOTE_API,
 ]);
 
 function showLoading(on = true) {
@@ -63,7 +61,7 @@ function setApiStatus(source, note = "") {
   }
   if (source === "direct") {
     el.classList.add("is-live");
-    el.textContent = `Data source: Live backend API${note ? ` (${note})` : ""}.`;
+    el.textContent = "Data source: Live backend API connected.";
     return;
   }
   if (source === "static") {
@@ -121,7 +119,7 @@ async function loadData(params = {}) {
     try {
       const payload = await fetchFromApi(candidate, year, strength);
       const source = sourceTypeFromBase(candidate);
-      const note = source === "direct" ? normalizeBase(candidate) : "";
+      const note = source === "direct" ? "custom endpoint" : "";
       predictionCache.set(cacheKey, { payload, source, note });
       setApiStatus(source, note);
       return normalizePayload(payload);
@@ -580,8 +578,6 @@ async function updateDynamicCharts() {
 
     updateMetrics(data, mitigationSeries);
     updateCurrentSituation(data);
-    charts.riskDist.data.datasets[0].data = computeRiskDistribution(data.risk_mitigation);
-    charts.riskDist.update();
     updateRiskPanel(Number(data.risk_mitigation[data.risk_mitigation.length - 1] || 0));
     updateEarlyLateHighlight(data);
     generateInsights(data);
@@ -714,8 +710,10 @@ async function init() {
   toggleBtn.addEventListener("click", () => {
     const chartsSection = document.querySelector(".charts-container");
     const scenarioSection = document.getElementById("scenario-section");
+    const riskHeatmapSection = document.getElementById("risk-heatmap-section");
     chartsSection.classList.toggle("hidden");
     scenarioSection.classList.toggle("hidden");
+    riskHeatmapSection.classList.toggle("hidden");
     toggleBtn.textContent = chartsSection.classList.contains("hidden") ? "Back to Charts" : "Compare Scenarios";
   });
 

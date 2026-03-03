@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AstraForecast - Interactive Space Debris Policy Dashboard</title>
-    <meta name="api-base-url" content="https://astra-forecast-backend.vercel.app" />
+    <meta name="api-base-url" content="" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
@@ -214,7 +214,7 @@
         </section>
       </div>
 
-      <section class="card">
+      <section id="risk-heatmap-section" class="card hidden">
         <h2>
           Risk Heatmap (Debris/Satellite Ratio)
           <span class="info-tip" tabindex="0" data-tip="Synthetic risk index based on debris-to-satellite ratio.">i</span>
@@ -229,12 +229,12 @@
         <p><strong>Recommended Action:</strong> <span id="risk-recommendation">-</span></p>
       </section>
 
-      <section class="card">
+      <section id="risk-dist-section" class="card">
         <h2>Risk Category Breakdown (Current Scenario)</h2>
         <canvas id="chart-risk-dist"></canvas>
       </section>
 
-      <section id="scenario-section" class="card">
+      <section id="scenario-section" class="card hidden">
         <h2>Mitigation Scenario Comparison</h2>
         <div id="scenario-buttons" class="scenario-grid">
           <button class="scenario-btn active" data-scenario="year_5">Start +5</button>
