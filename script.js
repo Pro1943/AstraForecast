@@ -7,10 +7,12 @@ let sliderUpdateTimer = null;
 const queryApi = new URLSearchParams(window.location.search).get("api")?.trim() || "";
 const metaApi = document.querySelector('meta[name="api-base-url"]')?.getAttribute("content")?.trim() || "";
 const windowApi = (window.ORBITAL_API_BASE || "").trim();
-const storedApi = (localStorage.getItem("ORBITAL_API_BASE") || "").trim();
 
 if (queryApi) {
   localStorage.setItem("ORBITAL_API_BASE", queryApi);
+} else {
+  // Avoid stale direct backend endpoints leaking across sessions.
+  localStorage.removeItem("ORBITAL_API_BASE");
 }
 
 function normalizeBase(base) {
@@ -31,13 +33,8 @@ function uniqueBases(candidates) {
   return out;
 }
 
-const API_CANDIDATES = uniqueBases([
-  queryApi,
-  metaApi,
-  windowApi,
-  storedApi,
-  "",
-]);
+const explicitCandidates = uniqueBases([queryApi, metaApi, windowApi].filter(Boolean));
+const API_CANDIDATES = explicitCandidates.length ? uniqueBases(["", ...explicitCandidates]) : [""];
 
 function showLoading(on = true) {
   const ov = document.getElementById("loading-overlay");
@@ -124,7 +121,8 @@ async function loadData(params = {}) {
       setApiStatus(source, note);
       return normalizePayload(payload);
     } catch (err) {
-      console.warn(`API request failed for "${candidate || "same-origin"}":`, err.message);
+      const code = /API failed: (\d+)/.exec(err.message)?.[1] || "";
+      console.warn(`API request failed for "${candidate || "same-origin"}"${code ? ` (${code})` : ""}.`);
     }
   }
 
