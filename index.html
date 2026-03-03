@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>AstraForecast - Interactive Space Debris Policy Dashboard</title>
-    <meta name="api-base-url" content="" />
+    <meta name="api-base-url" content="https://astra-forecast-backend.vercel.app" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
@@ -26,6 +26,9 @@
         <a href="about-creator.html">About Creator</a>
       </nav>
     </header>
+    <div id="backend-warning-bar" class="backend-warning hidden" role="alert">
+      Warning: Connection to backend failed. Showing local dataset instead.
+    </div>
 
     <main class="container">
       <header class="hero">
@@ -33,8 +36,30 @@
         <p class="subtitle">Policy-support forecasting for satellite growth and orbital debris risk.</p>
       </header>
 
+      <section class="card context-card">
+        <h2>Current Situation (Observed Data)</h2>
+        <p class="helper-text">This is what the latest observed year in the dataset currently shows.</p>
+        <div class="highlight-grid">
+          <div class="highlight-item">
+            <div class="label">Latest observed year</div>
+            <div class="value" id="current-year">-</div>
+          </div>
+          <div class="highlight-item">
+            <div class="label">Rocket launches (actual)</div>
+            <div class="value" id="current-launches">-</div>
+          </div>
+          <div class="highlight-item">
+            <div class="label">Satellites launched (actual)</div>
+            <div class="value" id="current-satellites">-</div>
+          </div>
+        </div>
+      </section>
+
       <section class="card highlight-card">
-        <h2>2055 Impact Snapshot: Early vs Late Intervention</h2>
+        <h2>Model Outlook Based on Current Situation</h2>
+        <p class="helper-text">
+          As per the current trend, the model predicts the following by 2055. Earlier intervention materially lowers debris.
+        </p>
         <div class="highlight-grid">
           <div class="highlight-item">
             <div class="label">Start +5 (2055 debris)</div>
@@ -50,6 +75,44 @@
           </div>
         </div>
         <p id="highlight-note" class="helper-text"></p>
+      </section>
+
+      <section class="card split-card">
+        <h2>Data Visualization: Current vs Predicted</h2>
+        <p class="helper-text">
+          Left side shows current data and right side shows predicted data. Use tabs to switch between metric groups.
+        </p>
+        <div class="split-tabs" role="tablist" aria-label="Data visualization tabs">
+          <button class="split-tab-btn active" data-split-tab="launches" role="tab" aria-selected="true">
+            Launches &amp; Satellites
+          </button>
+          <button class="split-tab-btn" data-split-tab="debris" role="tab" aria-selected="false">
+            Debris &amp; Risk
+          </button>
+        </div>
+        <div class="split-visual-grid">
+          <div>
+            <h3 class="split-title" id="split-left-title">Current Data (Observed Launches &amp; Satellites)</h3>
+            <div class="split-chart-frame" data-tab-panel="launches-left">
+              <canvas id="chart-current-launches-satellites"></canvas>
+            </div>
+            <div class="split-chart-frame hidden" data-tab-panel="debris-left">
+              <canvas id="chart-current-debris-risk"></canvas>
+            </div>
+          </div>
+          <div>
+            <h3 class="split-title" id="split-right-title">Predicted Data (Forecast Launches &amp; Satellites)</h3>
+            <div class="split-chart-frame" data-tab-panel="launches-right">
+              <canvas id="chart-predicted-launches-satellites"></canvas>
+            </div>
+            <div class="split-chart-frame hidden" data-tab-panel="debris-right">
+              <canvas id="chart-predicted-debris-risk"></canvas>
+            </div>
+          </div>
+        </div>
+        <p id="split-tab-helper" class="helper-text">
+          Launches &amp; Satellites: observed history on the left, projected trend on the right.
+        </p>
       </section>
 
       <section class="controls-panel">
@@ -70,25 +133,46 @@
           <button id="btn-export-csv" class="btn-export">Export CSV</button>
           <button id="btn-toggle-mode" class="btn-mode">Compare Scenarios</button>
         </div>
+        <div class="api-status" id="api-status">Data source: checking...</div>
       </section>
 
       <section class="metrics-grid">
         <div class="metric-card">
-          <div class="metric-icon">R</div>
+          <div class="metric-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M3 20h18M7 16l4-5 3 3 4-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="7" cy="16" r="1.5" fill="currentColor" />
+              <circle cx="11" cy="11" r="1.5" fill="currentColor" />
+              <circle cx="14" cy="14" r="1.5" fill="currentColor" />
+              <circle cx="18" cy="8" r="1.5" fill="currentColor" />
+            </svg>
+          </div>
           <div class="metric-content">
             <h3>Final Launches</h3>
             <div class="metric-value" id="metric-launches">-</div>
           </div>
         </div>
         <div class="metric-card">
-          <div class="metric-icon">S</div>
+          <div class="metric-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <ellipse cx="12" cy="8" rx="7" ry="3.2" stroke="currentColor" stroke-width="2" />
+              <path d="M5 8v8c0 1.8 3.1 3.2 7 3.2s7-1.4 7-3.2V8" stroke="currentColor" stroke-width="2" />
+              <path d="M5 12c0 1.8 3.1 3.2 7 3.2s7-1.4 7-3.2" stroke="currentColor" stroke-width="2" />
+            </svg>
+          </div>
           <div class="metric-content">
             <h3>Total Satellites</h3>
             <div class="metric-value" id="metric-satellites">-</div>
           </div>
         </div>
         <div class="metric-card">
-          <div class="metric-icon">D</div>
+          <div class="metric-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <path d="M6 16l3-3 3 2 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M18 8h2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </div>
           <div class="metric-content">
             <h3>Debris Saved</h3>
             <div class="metric-value" id="metric-debris-saved">-</div>
@@ -96,7 +180,13 @@
           </div>
         </div>
         <div class="metric-card">
-          <div class="metric-icon">!</div>
+          <div class="metric-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3l9 16H3L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+              <path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <circle cx="12" cy="16.5" r="1" fill="currentColor" />
+            </svg>
+          </div>
           <div class="metric-content">
             <h3>Risk Reduction</h3>
             <div class="metric-value" id="metric-risk-reduction">-</div>

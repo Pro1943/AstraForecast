@@ -1,20 +1,80 @@
 let globalData = null;
 const charts = {};
 const predictionCache = new Map();
+let latestUpdateToken = 0;
+let sliderUpdateTimer = null;
 
-const queryApi = new URLSearchParams(window.location.search).get("api");
-if (queryApi) localStorage.setItem("ORBITAL_API_BASE", queryApi);
+const DEFAULT_REMOTE_API = "https://astra-forecast-backend.vercel.app";
+const queryApi = new URLSearchParams(window.location.search).get("api")?.trim() || "";
+const metaApi = document.querySelector('meta[name="api-base-url"]')?.getAttribute("content")?.trim() || "";
+const windowApi = (window.ORBITAL_API_BASE || "").trim();
+const storedApi = (localStorage.getItem("ORBITAL_API_BASE") || "").trim();
 
-const API_BASE =
-  queryApi ||
-  window.ORBITAL_API_BASE ||
-  document.querySelector('meta[name="api-base-url"]')?.getAttribute("content") ||
-  localStorage.getItem("ORBITAL_API_BASE") ||
-  "";
+if (queryApi) {
+  localStorage.setItem("ORBITAL_API_BASE", queryApi);
+}
+
+function normalizeBase(base) {
+  if (!base) return "";
+  return base.replace(/\/$/, "");
+}
+
+function uniqueBases(candidates) {
+  const seen = new Set();
+  const out = [];
+  candidates.forEach((candidate) => {
+    const normalized = normalizeBase(candidate);
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      out.push(normalized);
+    }
+  });
+  return out;
+}
+
+const API_CANDIDATES = uniqueBases([
+  queryApi,
+  metaApi,
+  windowApi,
+  storedApi,
+  "",
+  DEFAULT_REMOTE_API,
+]);
 
 function showLoading(on = true) {
   const ov = document.getElementById("loading-overlay");
   if (ov) ov.classList.toggle("hidden", !on);
+}
+
+function setApiStatus(source, note = "") {
+  const el = document.getElementById("api-status");
+  const warnBar = document.getElementById("backend-warning-bar");
+  if (!el) return;
+  el.classList.remove("is-live", "is-fallback", "is-error");
+  if (warnBar) warnBar.classList.add("hidden");
+  if (source === "checking") {
+    el.textContent = "Data source: checking...";
+    return;
+  }
+  if (source === "proxy") {
+    el.classList.add("is-live");
+    el.textContent = "Data source: Live API via Netlify proxy.";
+    return;
+  }
+  if (source === "direct") {
+    el.classList.add("is-live");
+    el.textContent = `Data source: Live backend API${note ? ` (${note})` : ""}.`;
+    return;
+  }
+  if (source === "static") {
+    el.classList.add("is-fallback");
+    el.textContent = "Data source: Fallback static predictions.json.";
+    if (warnBar) warnBar.classList.remove("hidden");
+    return;
+  }
+  el.classList.add("is-error");
+  el.textContent = note || "Data source: unavailable.";
+  if (warnBar) warnBar.classList.remove("hidden");
 }
 
 function normalizePayload(data, cacheHit = false) {
@@ -30,9 +90,9 @@ function normalizePayload(data, cacheHit = false) {
 }
 
 async function fetchFromApi(base, offsetYears, strength) {
-  const prefix = base ? base.replace(/\/$/, "") : "";
+  const prefix = normalizeBase(base);
   const url = `${prefix}/predict?year=${offsetYears}&strength=${strength}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(`API failed: ${res.status}`);
   return res.json();
 }
@@ -43,27 +103,41 @@ async function fetchStaticJson() {
   return res.json();
 }
 
+function sourceTypeFromBase(base) {
+  if (!base) return "proxy";
+  return "direct";
+}
+
 async function loadData(params = {}) {
   const { year = 10, strength = 0.01 } = params;
   const cacheKey = `${year}|${strength.toFixed(3)}`;
   if (predictionCache.has(cacheKey)) {
-    return normalizePayload(predictionCache.get(cacheKey), true);
+    const cached = predictionCache.get(cacheKey);
+    setApiStatus(cached.source, cached.note);
+    return normalizePayload(cached.payload, true);
   }
 
-  const candidates = API_BASE ? [API_BASE, ""] : [""];
-  for (const candidate of candidates) {
+  for (const candidate of API_CANDIDATES) {
     try {
       const payload = await fetchFromApi(candidate, year, strength);
-      predictionCache.set(cacheKey, payload);
+      const source = sourceTypeFromBase(candidate);
+      const note = source === "direct" ? normalizeBase(candidate) : "";
+      predictionCache.set(cacheKey, { payload, source, note });
+      setApiStatus(source, note);
       return normalizePayload(payload);
-    } catch (e) {
-      console.warn("API request failed:", e.message);
+    } catch (err) {
+      console.warn(`API request failed for "${candidate || "same-origin"}":`, err.message);
     }
   }
 
   const staticPayload = await fetchStaticJson();
-  predictionCache.set(cacheKey, staticPayload);
+  predictionCache.set(cacheKey, { payload: staticPayload, source: "static", note: "" });
+  setApiStatus("static");
   return normalizePayload(staticPayload);
+}
+
+function toNumericSeries(arr) {
+  return arr.map((v) => (v === null ? null : Number(v)));
 }
 
 function computeStartYearFromOffset(data, offsetYears) {
@@ -79,6 +153,13 @@ function getTargetIndex(data, targetYear = 2055) {
     if (years[i] <= targetYear) return { idx: i, exact: false };
   }
   return { idx: years.length - 1, exact: false };
+}
+
+function getLatestActualIndex(data) {
+  for (let i = data.years.length - 1; i >= 0; i -= 1) {
+    if (data.rocket_actual[i] !== null && data.satellites_actual[i] !== null) return i;
+  }
+  return 0;
 }
 
 function makeForecastChart(ctx, labels, actual, predicted, uncertainty, labelActual, labelPred) {
@@ -164,6 +245,44 @@ function makeLineChart(ctx, labels, dataA, dataB, labelA, labelB) {
           tension: 0.3,
           fill: false,
           pointRadius: 0,
+          borderWidth: 2,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: "#cfe6f5", font: { size: 12 } } } },
+      scales: {
+        x: { ticks: { color: "#9aa5b1" } },
+        y: { ticks: { color: "#9aa5b1" } },
+      },
+    },
+  });
+}
+
+function makeComparisonChart(ctx, labels, seriesA, seriesB, labelA, labelB, colorA, colorB) {
+  return new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: labelA,
+          data: seriesA,
+          borderColor: colorA,
+          backgroundColor: "rgba(110,231,183,0.08)",
+          tension: 0.3,
+          pointRadius: 1,
+          borderWidth: 2,
+        },
+        {
+          label: labelB,
+          data: seriesB,
+          borderColor: colorB,
+          backgroundColor: "rgba(74,144,226,0.08)",
+          tension: 0.3,
+          pointRadius: 1,
           borderWidth: 2,
         },
       ],
@@ -296,12 +415,26 @@ function updateEarlyLateHighlight(data) {
     : `2055 was not available; using ${data.years[idx]} as the closest year <= 2055.`;
 }
 
+function updateCurrentSituation(data) {
+  const idx = getLatestActualIndex(data);
+  document.getElementById("current-year").textContent = data.years[idx];
+  document.getElementById("current-launches").textContent = `${Math.round(Number(data.rocket_actual[idx]))}`;
+  document.getElementById("current-satellites").textContent = `${Math.round(Number(data.satellites_actual[idx]))}`;
+}
+
 function generateInsights(data) {
   const insights = data.insights;
+  const idx = getLatestActualIndex(data);
+  const currentYear = data.years[idx];
+  const currentLaunches = Math.round(Number(data.rocket_actual[idx]));
+  const currentSats = Math.round(Number(data.satellites_actual[idx]));
   const lines = [
-    `<strong>By ${insights.final_year}:</strong>`,
-    `- Predicted <strong>${Math.round(insights.final_rockets)} annual rocket launches</strong>`,
-    `- Cumulative satellites reach <strong>${Math.round(insights.total_cumulative)}</strong> in orbit`,
+    `<strong>Current situation (${currentYear}):</strong>`,
+    `- Observed annual rocket launches: <strong>${currentLaunches}</strong>`,
+    `- Observed annual satellites launched: <strong>${currentSats}</strong>`,
+    `<br><strong>As per this trend, by ${insights.final_year} the model predicts:</strong>`,
+    `- <strong>${Math.round(insights.final_rockets)} annual rocket launches</strong>`,
+    `- <strong>${Math.round(insights.total_cumulative)} cumulative satellites</strong> in orbit`,
     `- Without mitigation: <strong>${Math.round(insights.final_debris_no_action)} debris pieces</strong>`,
     `- With mitigation: <strong>${Math.round(insights.final_debris_mitigation)} debris pieces</strong> (${Math.round(insights.savings_pct)}% reduction)`,
     `<br><strong>Policy Insight:</strong> earlier intervention reduces long-run debris accumulation more than delayed action.`,
@@ -361,12 +494,61 @@ function exportToCSV(data) {
   URL.revokeObjectURL(url);
 }
 
+function updateSplitDebrisRiskCharts(data) {
+  if (charts.splitCurrentDebrisRisk) {
+    charts.splitCurrentDebrisRisk.data.labels = data.years;
+    charts.splitCurrentDebrisRisk.data.datasets[0].data = data.debris_no_action.map(Number);
+    charts.splitCurrentDebrisRisk.data.datasets[1].data = data.risk_no_action.map(Number);
+    charts.splitCurrentDebrisRisk.update();
+  }
+  if (charts.splitPredictedDebrisRisk) {
+    charts.splitPredictedDebrisRisk.data.labels = data.years;
+    charts.splitPredictedDebrisRisk.data.datasets[0].data = data.debris_mitigation.map(Number);
+    charts.splitPredictedDebrisRisk.data.datasets[1].data = data.risk_mitigation.map(Number);
+    charts.splitPredictedDebrisRisk.update();
+  }
+}
+
+function setSplitTab(tabName) {
+  const isLaunches = tabName === "launches";
+  const leftTitle = document.getElementById("split-left-title");
+  const rightTitle = document.getElementById("split-right-title");
+  const helper = document.getElementById("split-tab-helper");
+
+  document.querySelectorAll(".split-tab-btn").forEach((btn) => {
+    const active = btn.dataset.splitTab === tabName;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+
+  document.querySelector('[data-tab-panel="launches-left"]').classList.toggle("hidden", !isLaunches);
+  document.querySelector('[data-tab-panel="launches-right"]').classList.toggle("hidden", !isLaunches);
+  document.querySelector('[data-tab-panel="debris-left"]').classList.toggle("hidden", isLaunches);
+  document.querySelector('[data-tab-panel="debris-right"]').classList.toggle("hidden", isLaunches);
+
+  if (isLaunches) {
+    leftTitle.textContent = "Current Data (Observed Launches & Satellites)";
+    rightTitle.textContent = "Predicted Data (Forecast Launches & Satellites)";
+    helper.textContent = "Launches & Satellites: observed history on the left, projected trend on the right.";
+  } else {
+    leftTitle.textContent = "Current Data (No-Action Baseline: Debris & Risk)";
+    rightTitle.textContent = "Predicted Data (Mitigation Scenario: Debris & Risk)";
+    helper.textContent = "Debris & Risk: current baseline on the left, model prediction under selected mitigation on the right.";
+  }
+
+  Object.values(charts).forEach((chart) => {
+    if (chart && typeof chart.resize === "function") chart.resize();
+  });
+}
+
 async function updateDynamicCharts() {
+  const requestToken = ++latestUpdateToken;
   const offsetYears = parseInt(document.getElementById("slider-mitigation-year").value, 10);
   const strength = parseFloat(document.getElementById("slider-mitigation-strength").value);
   showLoading(true);
   try {
     const data = await loadData({ year: offsetYears, strength });
+    if (requestToken !== latestUpdateToken) return;
     globalData = data;
     const mitigationSeries = data.debris_mitigation.map(Number);
 
@@ -394,29 +576,46 @@ async function updateDynamicCharts() {
     }
     charts.scenarios.update();
 
+    updateSplitDebrisRiskCharts(data);
+
     updateMetrics(data, mitigationSeries);
+    updateCurrentSituation(data);
     charts.riskDist.data.datasets[0].data = computeRiskDistribution(data.risk_mitigation);
     charts.riskDist.update();
     updateRiskPanel(Number(data.risk_mitigation[data.risk_mitigation.length - 1] || 0));
     updateEarlyLateHighlight(data);
     generateInsights(data);
   } finally {
-    showLoading(false);
+    if (requestToken === latestUpdateToken) {
+      showLoading(false);
+    }
   }
+}
+
+function scheduleDynamicUpdate() {
+  clearTimeout(sliderUpdateTimer);
+  sliderUpdateTimer = setTimeout(() => {
+    updateDynamicCharts().catch((err) => {
+      console.error(err);
+      setApiStatus("error", "Data source: request failed.");
+      document.getElementById("insights-text").textContent =
+        "Error loading predictions data. Run backend first or keep predictions.json available.";
+    });
+  }, 150);
 }
 
 async function init() {
   showLoading(true);
+  setApiStatus("checking");
   globalData = await loadData();
   showLoading(false);
 
   const labels = globalData.years;
-  const parseSeries = (arr) => arr.map((v) => (v === null ? null : Number(v)));
 
   charts.rockets = makeForecastChart(
     document.getElementById("chart-rockets"),
     labels,
-    parseSeries(globalData.rocket_actual),
+    toNumericSeries(globalData.rocket_actual),
     globalData.rocket_predicted.map(Number),
     globalData.rocket_uncertainty,
     "Launches (actual)",
@@ -426,7 +625,7 @@ async function init() {
   charts.satellites = makeForecastChart(
     document.getElementById("chart-satellites"),
     labels,
-    parseSeries(globalData.satellites_actual),
+    toNumericSeries(globalData.satellites_actual),
     globalData.satellites_predicted.map(Number),
     globalData.satellites_uncertainty,
     "Satellites (actual)",
@@ -457,6 +656,58 @@ async function init() {
 
   charts.scenarios = createScenarioChart(document.getElementById("chart-scenarios"), globalData, labels);
 
+  const latestIdx = getLatestActualIndex(globalData);
+  const currentLabels = globalData.years.slice(0, latestIdx + 1);
+  const forecastLabels = globalData.years.slice(latestIdx);
+
+  charts.splitCurrentLaunchesSatellites = makeComparisonChart(
+    document.getElementById("chart-current-launches-satellites"),
+    currentLabels,
+    globalData.rocket_actual.slice(0, latestIdx + 1).map(Number),
+    globalData.satellites_actual.slice(0, latestIdx + 1).map(Number),
+    "Rocket Launches (actual)",
+    "Satellites Launched (actual)",
+    "#6ee7b7",
+    "#ffd93d"
+  );
+
+  charts.splitPredictedLaunchesSatellites = makeComparisonChart(
+    document.getElementById("chart-predicted-launches-satellites"),
+    forecastLabels,
+    globalData.rocket_predicted.slice(latestIdx).map(Number),
+    globalData.satellites_predicted.slice(latestIdx).map(Number),
+    "Rocket Launches (predicted)",
+    "Satellites Launched (predicted)",
+    "#4a90e2",
+    "#9ad0ff"
+  );
+
+  charts.splitCurrentDebrisRisk = makeComparisonChart(
+    document.getElementById("chart-current-debris-risk"),
+    labels,
+    globalData.debris_no_action.map(Number),
+    globalData.risk_no_action.map(Number),
+    "Debris (no action)",
+    "Risk index (no action)",
+    "#ff6b6b",
+    "#f59e0b"
+  );
+
+  charts.splitPredictedDebrisRisk = makeComparisonChart(
+    document.getElementById("chart-predicted-debris-risk"),
+    labels,
+    globalData.debris_mitigation.map(Number),
+    globalData.risk_mitigation.map(Number),
+    "Debris (mitigation)",
+    "Risk index (mitigation)",
+    "#6ee7b7",
+    "#4a90e2"
+  );
+
+  document.querySelectorAll(".split-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setSplitTab(btn.dataset.splitTab));
+  });
+
   document.getElementById("btn-export-csv").addEventListener("click", () => exportToCSV(globalData));
 
   const toggleBtn = document.getElementById("btn-toggle-mode");
@@ -474,11 +725,11 @@ async function init() {
     const offset = Number(e.target.value);
     document.getElementById("mitigation-year-display").textContent =
       `+${offset} years (Year ${computeStartYearFromOffset(globalData, offset)})`;
-    updateDynamicCharts();
+    scheduleDynamicUpdate();
   });
   strengthSlider.addEventListener("input", (e) => {
     document.getElementById("mitigation-strength-display").textContent = `${(Number(e.target.value) * 100).toFixed(1)}%/year`;
-    updateDynamicCharts();
+    scheduleDynamicUpdate();
   });
 
   document.querySelectorAll(".scenario-btn").forEach((btn) => {
@@ -491,7 +742,7 @@ async function init() {
       document.getElementById("mitigation-year-display").textContent =
         `+${offset} years (Year ${computeStartYearFromOffset(globalData, offset)})`;
       document.getElementById("mitigation-strength-display").textContent = "1.0%/year";
-      updateDynamicCharts();
+      scheduleDynamicUpdate();
     });
   });
 
@@ -499,13 +750,16 @@ async function init() {
   document.getElementById("mitigation-year-display").textContent =
     `+${initialOffset} years (Year ${computeStartYearFromOffset(globalData, initialOffset)})`;
   updateMetrics(globalData);
+  updateCurrentSituation(globalData);
   updateRiskPanel(Number(globalData.risk_mitigation[globalData.risk_mitigation.length - 1] || 0));
   updateEarlyLateHighlight(globalData);
   generateInsights(globalData);
+  setSplitTab("launches");
   await updateDynamicCharts();
 }
 
 init().catch((err) => {
   console.error(err);
+  setApiStatus("error", "Data source: request failed.");
   document.getElementById("insights-text").textContent = "Error loading predictions data. Run backend first or keep predictions.json available.";
 });

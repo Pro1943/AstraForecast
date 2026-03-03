@@ -1,2 +1,20 @@
 [build]
   publish = "."
+
+[[redirects]]
+  from = "/predict"
+  to = "https://astra-forecast-backend.vercel.app/predict"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/metadata"
+  to = "https://astra-forecast-backend.vercel.app/metadata"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/healthz"
+  to = "https://astra-forecast-backend.vercel.app/healthz"
+  status = 200
+  force = true
